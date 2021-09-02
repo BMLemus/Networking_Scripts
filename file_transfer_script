@@ -1,0 +1,80 @@
+from netmiko import ConnectHandler, file_transfer, progress_bar, ssh_exception
+from getpass import getpass
+
+
+# This script will connect to devices based on their IP address, provided by IP_Addresses.csv in the PATH for the script.
+# Then it will gather the file in the source_file location and transfer it to the device using the dest_file name (ideally the same).
+# After performing the transfer it will then disable SCP capabilities.
+
+
+# Gather AAA credentials to log in to devices
+print('',('Please enter AAA credentials'),'',sep='\n')
+user = input('Username: ')
+password = getpass()
+
+# Provide arg variables for file transfer
+source_file = '(Drive Name On PC Running Script):\(Directory_Name)\(File_Name)'
+dest_file = '(Destination file name, typically the same)'
+
+# Create var for reporting after uploads
+succesful_transfer = []
+need_follow_up = []
+
+# Gather the IPs from the CSV file, Provides a with loop to iterate through each IP address, ssh_conn is an arg used with file_transfer
+with open('IP_Addresses.csv', 'r') as devices:
+    for ip in devices:
+        switch = {'device_type': 'cisco_ios',
+                'host': ip,
+                'username': user,
+                'password': password,
+                'fast_cli': False,
+                'session_log': 'netmiko_session.txt'
+                }  
+
+        # Try function will iterate through the child functions using each separate IP
+        # net_connect establishes SSH connection to device and returns the hostname
+        try:
+            print('',('*' * 82),('Connecting to: ' + ip),sep='\n')
+            ssh_conn = ConnectHandler(**switch)
+            hostname = ssh_conn.find_prompt().strip('#')
+            print(('Successfully connected to: ' + hostname),'',sep='\n')
+
+            # Enable SCP first
+            scp_enable=ssh_conn.send_config_set('ip scp server enable')
+
+            # Transfer the file via SCP
+            transfer_dict = file_transfer(ssh_conn,
+                                  source_file= source_file, 
+                                  dest_file= dest_file,
+                                  file_system= 'flash:', 
+                                  direction= 'put',
+                                  progress=progress_bar
+                                  )
+            if transfer_dict['file_transferred']:
+                print('','','File successfully transferred',sep='\n')
+                succesful_transfer.append(ip.strip('\n'))
+            else:
+                print('File already present','',sep='\n')
+                need_follow_up.append(ip.strip('\n'))
+            scp_disable=ssh_conn.send_config_set('no ip scp server enable')
+
+        # Document any exceptions and add that device to offline list
+        except ssh_exception as e:
+            print(('!' * 82),
+            ('Exception Occurred: '),'',e,'',('!' * 82),sep='\n')
+            break
+
+    #Provide feedback on file transfers
+    print('-' * 82)
+    if need_follow_up == 0:
+        for y in succesful_transfer:
+            print(y)
+        print('All IPs had the file loaded successfully to flash:','',sep='\n')
+    else:
+        print('The following devices had the file transferred to flash:','',sep='\n')
+        for k, v in succesful_transfer.items:
+            print(k,v)
+        print('The following devices already had the file located in their flash:')
+        for key, value in need_follow_up.items:
+            print(key,' - ',value)
+    print('-' * 82,'',sep='\n')
