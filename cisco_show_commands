@@ -1,0 +1,86 @@
+from netmiko import ConnectHandler, NetmikoAuthenticationException
+from getpass import getpass
+import pandas as pd
+
+
+# This script executes multiple show commands on cisco_ios devices, converts those commands to Pandas dataframes and then writes those dataframes into excel sheets.
+# This is dependant on the Netmiko suite and uses TextFSM for cleaner formatting. Script will provide user feedback in the terminal as it runs.
+
+
+# Gather the login credentials for sequentially connecting to the IPs provided
+print('','Please enter AAA credentials below:',sep='\n')
+un = input('Username: ')
+pw = getpass()
+print('')
+
+
+# Open CSV file that contains the IP addresses that need to be connected to and create ssh_con variable for net_connect
+with open('IP_Addresses.csv', 'r') as dev:
+    g_conn_dict = {}
+    b_conn_list = []
+
+    for ip in dev:
+        ssh_con = {'device_type':'cisco_ios',
+        'host':ip,
+        'username':un,
+        'password':pw
+        }
+        
+        # The try loop will attempt all the commands necessary for each separate IP entry from the CSV file
+        try:
+            print('-' * 80)
+            print('Connecting to '+ ip)
+            net_conn=ConnectHandler(**ssh_con)
+            host = net_conn.find_prompt().strip('#')
+            print('\n','Sucessfully connected to ' + host)
+            g_conn_dict[ip.strip('\n')] = host
+
+        # Exception handling to end the script if SSH info is incorrect, otherwise capture info and continue
+        except NetmikoAuthenticationException as ssh_e:
+           print(ssh_e)
+           break
+        except Exception as e:
+            print('Unable to connect')
+            b_conn_list.append(ip.strip('\n'))
+            continue
+
+        # If no exeception continue; edit commands list to include any additional commands supported by textfsm; list found here https://github.com/networktocode/ntc-templates/tree/master/ntc_templates/templates
+        cmds = ['show ip interface brief',
+        'show interface description',
+        'show version',
+        'show inventory',
+        'show cdp neighbor detail',
+        'show vtp status',
+        'show spanning-tree',
+        'show vlan',
+        'show etherchannel summary'
+        ]
+        
+        # Create spreadsheet and front page
+        spreadsheet = (host + '-DATA.xlsx')
+        w = pd.ExcelWriter(spreadsheet, engine='xlsxwriter')
+        df_dict = {}
+
+        # Run each text fsm compatible command and store it into dataframe
+        for c in cmds:
+            out = net_conn.send_command(c,use_textfsm=True)
+            df_dict[c] = pd.DataFrame(out)
+        
+        # Write the spreadsheet using commands as the tab names
+        print('\n','Creating spreadsheet:', spreadsheet,'\n')
+        for k,v in df_dict.items():
+            v.to_excel(w, sheet_name=k.strip('show '),index=False)
+        w.save()
+
+
+# Print feedback for the user
+print('-' * 80)
+print('Successfully connected to the following devices:')
+for k,v in g_conn_dict.items():
+    print(k,'-',v)
+print('','-' * 80,sep='\n')
+if len(b_conn_list) > 0:
+    print('Unable to connect to the following devices:')
+    for i in b_conn_list:
+        print(i)
+    print('','-' * 80,sep='\n') 
