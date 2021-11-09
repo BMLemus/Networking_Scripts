@@ -1,1 +1,3 @@
 # This script was created to locate a MAC address on a specific LAN by searching through the MAC address table on the core of that campus lan.
+# The MAC addresses that you wish to locate need to be populated into the mac_addresses.csv file
+# Any format is accepted as one of the dependendenices is netaddr to convert the MAC address to Cisco's xxxx.xxxx.xxxx format specifically for this use.
